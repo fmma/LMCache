@@ -2432,6 +2432,66 @@ class HipFileMemoryAllocator(GPUMemoryAllocator):
         return "HipFileMemoryAllocator"
 
 
+class OpenDSMemoryAllocator(GPUMemoryAllocator):
+    """GPU memory allocator that registers its buffer with OpenDS.
+
+    Mirrors :class:`CuFileMemoryAllocator` but uses the OpenDS Python
+    binding (a vendor-neutral, cuFile-compatible API) for buffer
+    registration. The concrete OpenDS backend (ref/gds/aisio) is selected
+    by the ``OPENDS_BACKEND`` environment variable read by the binding.
+    """
+
+    def __init__(self, size: int, device=None):
+        # Third Party
+        import opends
+
+        self._opends = opends
+        if device is None:
+            # TODO(Serapheim): Ideally we'd get the device from the upper
+            # layer - for now just use the current device.
+            if torch.cuda.is_available():
+                device = f"cuda:{torch.cuda.current_device()}"
+            else:
+                device = "cpu:0"
+        super().__init__(size, device, align_bytes=4096)
+        self.base_pointer = self.tensor.data_ptr()
+        # A bare pointer has no discoverable extent, so the size is required.
+        # The registration pins the OpenDS driver open until deregistered.
+        opends.register_buffer(self.base_pointer, size)
+
+    def __del__(self):
+        self._opends.deregister_buffer(self.base_pointer)
+
+    def __str__(self):
+        return "OpenDSMemoryAllocator"
+
+
+def create_gds_allocator(
+    size: int, gds_backend: str = "cufile", device=None
+) -> GPUMemoryAllocator:
+    """Create the GPU memory allocator backing the GDS storage backend.
+
+    Args:
+        size: Buffer size in bytes.
+        gds_backend: I/O provider, one of ``"cufile"`` (NVIDIA cuFile),
+            ``"hipfile"`` (AMD), or ``"opends"`` (OpenDS binding).
+        device: Torch device for the buffer; defaults to the current device.
+
+    Returns:
+        A registered GPU memory allocator for the chosen provider.
+
+    Raises:
+        ValueError: If ``gds_backend`` is not a supported provider.
+    """
+    if gds_backend == "hipfile":
+        return HipFileMemoryAllocator(size, device=device)
+    if gds_backend == "opends":
+        return OpenDSMemoryAllocator(size, device=device)
+    if gds_backend == "cufile":
+        return CuFileMemoryAllocator(size, device=device)
+    raise ValueError(f"Unsupported gds_backend '{gds_backend}'")
+
+
 class PagedCpuGpuMemoryAllocator(MemoryAllocatorInterface):
     """
     Paged Memory Allocator for both CPU and GPU memory.

@@ -51,6 +51,20 @@ def test_gds_backend_metadata():
                 assert expected_nbytes == nbytes
 
 
+def test_gds_backend_defaults_to_cufile():
+    # The GDS I/O provider defaults to NVIDIA cuFile when unset.
+    config = LMCacheEngineConfig.from_defaults()
+    assert config.gds_backend == "cufile"
+
+
+def test_create_gds_allocator_rejects_unknown_provider():
+    # First Party
+    from lmcache.v1.memory_management import create_gds_allocator
+
+    with pytest.raises(ValueError, match="Unsupported gds_backend"):
+        create_gds_allocator(1024, "bogus")
+
+
 @pytest.mark.skip(reason="We need to add this test back after implementing prefetch")
 def test_gds_backend_sanity():
     BASE_DIR = Path(__file__).parent

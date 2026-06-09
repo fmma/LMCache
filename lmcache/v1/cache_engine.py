@@ -42,7 +42,7 @@ from lmcache.v1.config import LMCacheEngineConfig
 from lmcache.v1.event_manager import EventManager, EventStatus, EventType
 from lmcache.v1.gpu_connector.gpu_connectors import GPUConnectorInterface
 from lmcache.v1.gpu_connector.utils import assert_layerwise_gpu_connector
-from lmcache.v1.memory_management import CuFileMemoryAllocator  # noqa: E501
+from lmcache.v1.memory_management import create_gds_allocator  # noqa: E501
 from lmcache.v1.memory_management import (  # noqa: E501
     MemoryAllocatorInterface,
     MemoryFormat,
@@ -1918,7 +1918,9 @@ class LMCacheEngineBuilder:
 
         if config.gds_path is not None:
             assert config.gds_buffer_size is not None
-            return CuFileMemoryAllocator(config.gds_buffer_size * 1024**2)
+            return create_gds_allocator(
+                config.gds_buffer_size * 1024**2, config.gds_backend
+            )
 
         max_local_cpu_size = config.max_local_cpu_size
         # save_only_first_rank only works when use mla
