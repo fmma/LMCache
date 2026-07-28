@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
 """Platform dispatch for the GDS async backend.
 
-Selects the GDSContext-facing backend from cuFile, hipFile, or uGDS. Automatic
-selection chooses cuFile on NVIDIA and hipFile on AMD ROCm; GDS L1 config can
-explicitly select uGDS for a raw ``/dev/ugds_drvX`` slab. All implementations
+Selects the GDSContext-facing backend from cuFile, hipFile, uGDS, or OpenDS.
+Automatic selection chooses cuFile on NVIDIA and hipFile on AMD ROCm; GDS L1
+config can explicitly select uGDS for a raw ``/dev/ugds_drvX`` slab, or OpenDS
+for a filesystem slab driven over raw NVMe. All implementations
 expose an identical API -- :class:`AsyncHandle`, :class:`Submission`, and the
 ``register_*`` / ``deregister_*`` / ``close_driver`` functions -- so
 :mod:`lmcache.v1.gpu_connector.gds_context` remains backend-agnostic.
@@ -20,7 +21,7 @@ from typing import TYPE_CHECKING, Literal
 # Third Party
 import torch
 
-BackendName = Literal["auto", "cufile", "hipfile", "ugds"]
+BackendName = Literal["auto", "cufile", "hipfile", "ugds", "opends"]
 
 # The backend surface re-exported under stable module-level names so callers
 # (and test monkeypatches) target this module.
@@ -50,6 +51,9 @@ def _load_backend(name: BackendName) -> tuple[str, ModuleType]:
     elif selected == "ugds":
         # First Party
         from lmcache.v1.gpu_connector import _ugds_async as backend
+    elif selected == "opends":
+        # First Party
+        from lmcache.v1.gpu_connector import _opends_async as backend
     else:
         raise ValueError(f"unsupported GDS L1 backend: {name}")
     return selected, backend

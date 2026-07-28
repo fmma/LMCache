@@ -181,9 +181,15 @@ class GdsL1Config:
     use_direct_io: bool = True
     """Open the slab with ``O_DIRECT`` (required for the GDS DMA fast path)."""
 
-    backend: Literal["auto", "cufile", "hipfile", "ugds"] = "auto"
+    backend: Literal["auto", "cufile", "hipfile", "ugds", "opends"] = "auto"
     """GPU storage backend. ``auto`` selects cuFile on CUDA and hipFile on ROCm;
-    ``ugds`` treats ``file_location`` as a uGDS character-device path."""
+    ``ugds`` treats ``file_location`` as a uGDS character-device path; ``opends``
+    uses a filesystem slab like cuFile, driven over raw NVMe."""
+
+    prewrite: bool = False
+    """Zero-fill the slab on creation instead of leaving ``posix_fallocate``
+    unwritten extents. Removes first-touch extent conversion from the measured
+    path; set it for every backend when comparing them."""
 
     align_bytes: int = 4096
     """Allocation alignment; cuFile/hipFile and O_DIRECT require 4 KiB."""
@@ -428,10 +434,18 @@ def add_storage_manager_args(
     )
     gds_group.add_argument(
         "--gds-l1-backend",
-        choices=("auto", "cufile", "hipfile", "ugds"),
+        choices=("auto", "cufile", "hipfile", "ugds", "opends"),
         default="auto",
         help="GDS implementation. auto selects cuFile on CUDA or hipFile on ROCm; "
-        "ugds treats --gds-l1-path as /dev/ugds_drvX.",
+        "ugds treats --gds-l1-path as /dev/ugds_drvX; opends uses a filesystem "
+        "slab like cuFile.",
+    )
+    gds_group.add_argument(
+        "--gds-l1-prewrite",
+        action="store_true",
+        help="Zero-fill the slab on creation rather than leaving fallocate "
+        "unwritten extents, so first-touch extent conversion is not charged to "
+        "the measured path. Default False.",
     )
     # L1 Manager Config (TTL settings)
     ttl_group = parser.add_argument_group(
@@ -588,6 +602,7 @@ def parse_args_to_config(
             size_in_bytes=int(args.l1_size_gb * (1 << 30)),
             use_direct_io=args.gds_l1_use_direct_io,
             backend=args.gds_l1_backend,
+            prewrite=args.gds_l1_prewrite,
         )
 
     l1_manager_config = L1ManagerConfig(

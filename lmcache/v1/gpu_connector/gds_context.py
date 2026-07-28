@@ -129,7 +129,7 @@ class GDSContext:
             os.makedirs(selected, exist_ok=True)
             self._slab_path = os.path.join(selected, _SLAB_FILENAME)
 
-        self._open_and_register_slab(config.use_direct_io)
+        self._open_and_register_slab(config.use_direct_io, config.prewrite)
         self.initialized = True
 
     # --- Public API ---------------------------------------------------
@@ -252,18 +252,23 @@ class GDSContext:
 
     # --- Internal -----------------------------------------------------
 
-    def _open_and_register_slab(self, use_direct_io: bool) -> None:
+    def _open_and_register_slab(
+        self, use_direct_io: bool, prewrite: bool = False
+    ) -> None:
         """Open the slab and register it with the GDS backend.
 
-        cuFile/hipFile: create, truncate, and preallocate the slab file,
-        then open it (optionally with ``O_DIRECT``) and register the fd.
-        uGDS: open the existing raw block device directly; there is nothing
-        to create or preallocate, and ``O_DIRECT`` does not apply because
-        uGDS IO bypasses the kernel.
+        cuFile/hipFile/OpenDS: create, truncate, and preallocate the slab
+        file, then open it (optionally with ``O_DIRECT``) and register the
+        fd. uGDS: open the existing raw block device directly; there is
+        nothing to create or preallocate, and ``O_DIRECT`` does not apply
+        because uGDS IO bypasses the kernel.
 
         Args:
-            use_direct_io: Open with ``O_DIRECT`` (cuFile/hipFile only;
+            use_direct_io: Open with ``O_DIRECT`` (file-backed slabs only;
                 required for the GDS fast path).
+            prewrite: Zero-fill the slab instead of leaving unwritten
+                extents, so the first write to a region does not pay extent
+                conversion inside the measured path.
         """
         if self._backend == "ugds":
             fd = os.open(self._slab_path, os.O_RDWR)
@@ -274,6 +279,8 @@ class GDSContext:
             )
             try:
                 os.posix_fallocate(creator_fd, 0, self._slab_size)
+                if prewrite:
+                    self._zero_fill(creator_fd)
             finally:
                 os.close(creator_fd)
             flags = os.O_RDWR
@@ -296,12 +303,28 @@ class GDSContext:
             )
         else:
             logger.info(
-                "GDSContext: slab created at %s (%.1f GiB, O_DIRECT=%s), GDS "
-                "handle registered",
+                "GDSContext: %s slab created at %s (%.1f GiB, O_DIRECT=%s, "
+                "prewrite=%s), GDS handle registered",
+                self._backend,
                 self._slab_path,
                 self._slab_size / (1 << 30),
                 use_direct_io,
+                prewrite,
             )
+
+    def _zero_fill(self, fd: int) -> None:
+        """Write zeros over the whole slab so no unwritten extents remain."""
+        chunk = b"\0" * (8 << 20)
+        written = 0
+        while written < self._slab_size:
+            n = min(len(chunk), self._slab_size - written)
+            written += os.pwrite(fd, chunk[:n], written)
+        os.fsync(fd)
+        logger.info(
+            "GDSContext: pre-wrote %.1f GiB slab at %s",
+            self._slab_size / (1 << 30),
+            self._slab_path,
+        )
 
     def _register_region_locked(self, buffer: torch.Tensor) -> None:
         """GDS-register one <=16 MiB region (caller holds the lock)."""
