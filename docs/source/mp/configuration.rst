@@ -402,6 +402,21 @@ to load. Follow the
 to build ``libphoenix.so``, load the ``phoenixfs`` kernel module, and
 verify the installation.
 
+**OpenDS** (``libopends_<backend>.so``) is a fifth opt-in backend selected
+with ``--gds-l1-backend opends``.
+`OpenDS <https://github.com/xnvme/opends>`_ is a vendor-neutral
+accelerator direct storage API modeled on cuFile, with one shared object per
+backend: ``aisio`` (NVMe-to-GPU PCIe P2P DMA through xNVMe, with no kernel
+driver in the data path), ``cufile`` (NVIDIA cuFile) and ``ref`` (a POSIX
+reference). The ``OPENDS_BACKEND`` environment variable names the backend
+(default ``aisio``) and ``OPENDS_LIBRARY`` overrides the library path. Like
+cuFile it uses a filesystem slab: ``--gds-l1-path`` names an NVMe directory
+and the slab file can share the disk with other data. Every OpenDS backend
+registers only ``O_DIRECT`` descriptors, so ``--no-gds-l1-use-direct-io`` is
+rejected. The stream-ordered ``opends_stream_read`` / ``opends_stream_write``
+submissions take cuFile's ReadAsync/WriteAsync arguments, so the DMA stays
+ordered with the other work on the stream.
+
 
 
 .. note::
@@ -442,6 +457,20 @@ verify the installation.
    GPUs; other platforms require a matching ``libphoenix`` build and are not
    yet tested.
 
+.. note::
+
+   OpenDS requires a CUDA PyTorch build and ``libopends_<backend>.so``
+   reachable through the loader. The ``aisio`` backend joins an xNVMe
+   multi-process group: the xNVMe ``homi`` server must hold the NVMe
+   controller and ``xal-server`` must publish the slab filesystem's extent
+   index before the LMCache server starts, and the backend's own settings
+   (IO threads, queue depth, CPU mask) come from ``OPENDS_AISIO_*``
+   environment variables described in the OpenDS README. Each GPU staging
+   buffer is exported as a dma-buf, so its base and size must be multiples of
+   the GPU's 64 KiB page. The aisio driver brings up a CUDA context of its
+   own when the slab opens; LMCache restores PyTorch's primary context on the
+   opening thread and submits all GDS IO from that primary context.
+
 .. list-table::
    :header-rows: 1
    :widths: 30 15 55
@@ -453,17 +482,18 @@ verify the installation.
      - Not set
      - NVMe directory for the GDS L1 slab, or the raw device path when
        ``--gds-l1-backend ugds`` is used. Setting this enables the GDS L1
-       tier; with cuFile, hipFile, or phx one shared slab per process lives
-       at ``<path>/lmcache_gds_slab.bin``.
+       tier; with cuFile, hipFile, phx, or opends one shared slab per process
+       lives at ``<path>/lmcache_gds_slab.bin``.
    * - ``--gds-l1-backend``
      - ``auto``
      - GDS implementation: ``auto``, ``cufile``, ``hipfile``, ``mufile``,
-       ``ugds``, or ``phx``. ``auto`` selects cuFile on CUDA, hipFile on
-       ROCm, and muFile on MUSA.
+       ``ugds``, ``phx``, or ``opends``. ``auto`` selects cuFile on CUDA,
+       hipFile on ROCm, and muFile on MUSA.
    * - ``--gds-l1-use-direct-io`` / ``--no-gds-l1-use-direct-io``
      - ``True``
      - Open the slab with ``O_DIRECT`` (required for the GDS DMA fast path on
-       ext4). Ignored by ``ugds``, whose IO bypasses the kernel entirely.
+       ext4). Ignored by ``ugds``, whose IO bypasses the kernel entirely;
+       required by ``opends``.
 
 L1 Manager TTLs
 ----------------

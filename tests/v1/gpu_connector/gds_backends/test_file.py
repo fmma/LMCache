@@ -39,7 +39,7 @@ def test_handle_closes_fd_once(
         os.fstat(fd)
 
 
-@pytest.mark.parametrize("name", ["cufile", "hipfile", "ugds", "phx"])
+@pytest.mark.parametrize("name", ["cufile", "hipfile", "ugds", "phx", "opends"])
 def test_registration_failure_closes_owned_descriptor(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
