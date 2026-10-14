@@ -79,7 +79,7 @@ def _declare_signatures(lib: ctypes.CDLL) -> None:
     lib.opends_buf_deregister.argtypes = [ctypes.c_void_p]
     lib.opends_buf_deregister.restype = _opends_error_t
 
-    lib.opends_read_async.argtypes = [
+    lib.opends_stream_read.argtypes = [
         ctypes.c_void_p,                   # opends_handle_t fh
         ctypes.c_void_p,                   # void *buf_base
         ctypes.POINTER(ctypes.c_size_t),   # size_t *size_p
@@ -88,9 +88,9 @@ def _declare_signatures(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_int64),    # ssize_t *bytes_read_p
         ctypes.c_void_p,                   # opends_stream_t stream
     ]
-    lib.opends_read_async.restype = _opends_error_t
+    lib.opends_stream_read.restype = _opends_error_t
 
-    lib.opends_write_async.argtypes = [
+    lib.opends_stream_write.argtypes = [
         ctypes.c_void_p,
         ctypes.c_void_p,
         ctypes.POINTER(ctypes.c_size_t),
@@ -99,7 +99,7 @@ def _declare_signatures(lib: ctypes.CDLL) -> None:
         ctypes.POINTER(ctypes.c_int64),
         ctypes.c_void_p,
     ]
-    lib.opends_write_async.restype = _opends_error_t
+    lib.opends_stream_write.restype = _opends_error_t
 
     lib.opends_stream_register.argtypes = [ctypes.c_void_p, ctypes.c_uint]
     lib.opends_stream_register.restype = _opends_error_t
@@ -236,7 +236,7 @@ def deregister_stream(raw_stream: int) -> None:
 
 
 class Submission:
-    """One in-flight opends_read_async / opends_write_async.
+    """One in-flight opends_stream_read / opends_stream_write.
 
     Mirrors _cufile_async.Submission: holds ctypes storage that must
     stay alive until the stream executes the op.
@@ -319,7 +319,7 @@ class AsyncHandle:
         lib = _get_lib()
         sub = Submission(size=size, file_offset=file_offset, buf_offset=buf_offset)
         _check(
-            lib.opends_read_async(
+            lib.opends_stream_read(
                 ctypes.c_void_p(self._handle),
                 ctypes.c_void_p(buf_base),
                 ctypes.byref(sub._size),
@@ -328,7 +328,7 @@ class AsyncHandle:
                 ctypes.byref(sub._bytes_done),
                 ctypes.c_void_p(raw_stream),
             ),
-            "opends_read_async",
+            "opends_stream_read",
         )
         return sub
 
@@ -343,7 +343,7 @@ class AsyncHandle:
         lib = _get_lib()
         sub = Submission(size=size, file_offset=file_offset, buf_offset=buf_offset)
         _check(
-            lib.opends_write_async(
+            lib.opends_stream_write(
                 ctypes.c_void_p(self._handle),
                 ctypes.c_void_p(buf_base),
                 ctypes.byref(sub._size),
@@ -352,7 +352,7 @@ class AsyncHandle:
                 ctypes.byref(sub._bytes_done),
                 ctypes.c_void_p(raw_stream),
             ),
-            "opends_write_async",
+            "opends_stream_write",
         )
         return sub
 
